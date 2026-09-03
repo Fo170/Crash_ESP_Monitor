@@ -1,5 +1,5 @@
 // ============================================================================
-// Crash_ESP_Monitor.h — v0.3.3
+// Crash_ESP_Monitor.h — v0.3.4
 // Librairie header-only (ESP8266 + ESP32) : monitoring de crash + utilitaires
 // fusionnés (uptime, debug, boot_info, chip, mémoire, WatchDog) en UN SEUL
 // fichier.
@@ -154,6 +154,7 @@ static String CM_ResetReasonTexte(uint8_t reason)
     case 7:  return "Autre WatchDog";
     case 8:  return "Deep sleep";
     case 9:  return "Brownout (alimentation)";
+    case 10: return "SDIO";
     default: return "Inconnue";
   }
 }
@@ -351,6 +352,11 @@ static inline void printMemoryStats() {
 #define CM_MAGIC       0x4D4F4E33UL   // "MON3"
 #define CM_MSG_LEN     40
 
+// v0.3.4 : seuil d'epoch à partir duquel l'horodatage est considéré « fiable »
+// (NTP synchronisé → année ≥ 2001). L'ancien seuil 100000 s (~27,7 h) se
+// déclenchait à tort après ~28 h d'uptime sans NTP (fausses dates de 1970).
+#define CM_EPOCH_FIABLE  1000000000UL
+
 // Détection d'une boucle de reboot : N crashs sur les M derniers boots.
 #define CM_CRASH_LOOP_SEUIL  3   // nb de crashs dans la fenêtre → boucle
 #define CM_CRASH_LOOP_BOOTS  5   // fenêtre (derniers boots)
@@ -380,6 +386,13 @@ struct CMRtcBlock {
   uint32_t crash_boots_head;      // index d'écriture de l'anneau
   CMEvent ring[CM_MAX_EVENTS];
 };
+
+// v0.3.4 : sur ESP8266 le bloc entier est rapatrié dans les 512 o de la mémoire
+// RTC utilisateur (system_rtc_mem_*) → on fige la limite à la compilation pour
+// éviter qu'un futur champ déborde silencieusement (write qui ne fait rien).
+#if defined(ESP8266)
+  static_assert(sizeof(CMRtcBlock) <= 512, "CMRtcBlock dépasse les 512 o de mémoire RTC utilisateur ESP8266");
+#endif
 
 #if defined(ESP32)
   RTC_NOINIT_ATTR CMRtcBlock cm_rtc;
@@ -421,6 +434,11 @@ static String CM_Journal(int nb);             // fwd (définie plus bas)
   static volatile uint32_t cm_stack_hwm_core1 = 0;
 #endif
 static volatile uint32_t cm_heap_low = 0xFFFFFFFFUL;
+
+// v0.3.4 : plus grand bloc contigu du dernier crash, recopié en RAM au moment de
+// la détection (le champ RTC crash_maxalloc_reel est ensuite purgé pour éviter
+// qu'une vieille valeur ne soit recyclée par un crash ultérieur).
+static uint32_t cm_crash_maxalloc_last = 0;
 
 // ----------------------------------------------------------------------------
 // Journalise un événement dans la RTC (circulaire). Utilisable partout :
@@ -467,19 +485,19 @@ static void CM_HeapMaj(void)
 
 static void CM_HWM_Core0(void)
 {
+  // v0.3.4 : le suivi du heap minimum est intégré aux HWM (alimentait « Heap
+  // libre min » à 0 sur ESP32 tant que CM_HeapMaj() n'était pas appelé).
+  CM_HeapMaj();
 #if defined(ESP32)
   cm_stack_hwm_core0 = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
-#else
-  CM_HeapMaj();
 #endif
 }
 
 static void CM_HWM_Core1(void)
 {
+  CM_HeapMaj();
 #if defined(ESP32)
   cm_stack_hwm_core1 = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
-#else
-  CM_HeapMaj();
 #endif
 }
 
@@ -567,10 +585,21 @@ static void CM_CrashEnregistrer(uint8_t reason)
   // v0.3.3 : on préfère le heap RÉEL capturé au moment du crash par le hook de
   // shutdown (crash_heap_reel), sinon on retombe sur le heap du boot de détection
   // (trompeur : juste après un warm reboot, le heap est quasi au max).
+  // v0.3.4 : le champ est CONSOMMÉ puis purgé — une vieille valeur (hook non
+  // exécuté avant un reset dur, ex. pin externe) ne doit pas resservir pour un
+  // crash ultérieur. Le bloc contigu est recopié en RAM (cm_crash_maxalloc_last).
   if (cm_rtc.crash_heap_reel > 0)
+  {
     cm_rtc.crash_last_heap = cm_rtc.crash_heap_reel;
+    cm_crash_maxalloc_last = cm_rtc.crash_maxalloc_reel;
+    cm_rtc.crash_heap_reel     = 0;
+    cm_rtc.crash_maxalloc_reel = 0;
+  }
   else
+  {
     cm_rtc.crash_last_heap = (uint32_t)getFreeMemory();
+    cm_crash_maxalloc_last = 0;
+  }
 
   // Anneau des boots des crashs (fenêtre glissante pour CM_CrashLoop).
   cm_rtc.crash_boots[cm_rtc.crash_boots_head % CM_CRASH_LOOP_BOOTS] = cm_rtc.boot;
@@ -616,7 +645,7 @@ static bool CM_CrashLoop(void)
 static String CM_CrashResume(void)
 {
   String s = "Dernier crash: boot n°" + String(cm_rtc.crash_last_boot);
-  if (cm_rtc.crash_last_epoch >= 100000)
+  if (cm_rtc.crash_last_epoch >= CM_EPOCH_FIABLE)
   {
     time_t e = (time_t)cm_rtc.crash_last_epoch;
     struct tm* t = localtime(&e);
@@ -628,8 +657,8 @@ static String CM_CrashResume(void)
   }
   s += "\nUptime au crash: " + String(cm_rtc.crash_last_uptime_s) + " s";
   s += "\nHeap au crash: " + String(cm_rtc.crash_last_heap) + " o";
-  if (cm_rtc.crash_maxalloc_reel > 0)
-    s += " (bloc contigu max " + String(cm_rtc.crash_maxalloc_reel) + " o)";
+  if (cm_crash_maxalloc_last > 0)
+    s += " (bloc contigu max " + String(cm_crash_maxalloc_last) + " o)";
   if (CM_CrashLoop()) s += "\n🔄 BOUCLE DE REBOOT détectée !";
   return s;
 }
@@ -709,6 +738,18 @@ static void CM_Init(void)
     Serial.println("====================================");
     CM_emit(cm_crash_dump.c_str());
   }
+  else
+  {
+    // v0.3.4 : reset volontaire/normal → on purge un éventuel reliquat de heap
+    // « réel » (le hook n'a pas tourné avant un reset dur : pin externe...). Ne
+    // doit jamais resservir pour un crash détecté plus tard.
+    if (cm_rtc.crash_heap_reel != 0 || cm_rtc.crash_maxalloc_reel != 0)
+    {
+      cm_rtc.crash_heap_reel     = 0;
+      cm_rtc.crash_maxalloc_reel = 0;
+      CM_RTC_SAVE();
+    }
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -732,8 +773,10 @@ static String CM_Statut(void)
   s += "Raison boot: n°" + String(CM_ResetReason()) + " — " +
        CM_ResetReasonTexte(CM_ResetReason()) + "\n";
 #if defined(ESP32)
-  s += "Stack HWM Core0: " + String(cm_stack_hwm_core0) + " o libres (sur 10000)\n";
-  s += "Stack HWM Core1: " + String(cm_stack_hwm_core1) + " o libres (sur 20000)\n";
+  // v0.3.4 : plus de taille « (sur 10000/20000) » codée en dur (dépend de la
+  // config de loopTask / des tâches réelles) → valeur HWM seule, en octets libres.
+  s += "Stack HWM Core0: " + String(cm_stack_hwm_core0) + " o libres\n";
+  s += "Stack HWM Core1: " + String(cm_stack_hwm_core1) + " o libres\n";
 #endif
   s += "Heap libre min: " + String(cm_heap_low == 0xFFFFFFFFUL ? 0 : (uint32_t)cm_heap_low) + " o\n";
   s += "Heap libre: " + String(getFreeMemory()) + " o (fragmentation " +
@@ -764,9 +807,10 @@ static String CM_Journal(int nb)
   {
     const CMEvent& ev = cm_rtc.ring[i % CM_MAX_EVENTS];
     char ts[24];
-    if (ev.epoch >= 100000)
+    if (ev.epoch >= CM_EPOCH_FIABLE)
     {
-      struct tm* t = gmtime((const time_t*)&ev.epoch);
+      // v0.3.4 : localtime pour rester cohérent avec CM_CrashResume (heure locale).
+      struct tm* t = localtime((const time_t*)&ev.epoch);
       snprintf(ts, sizeof(ts), "%02d:%02d:%02d", t->tm_hour, t->tm_min, t->tm_sec);
     }
     else snprintf(ts, sizeof(ts), "+%lus", (unsigned long)(ev.ms / 1000));

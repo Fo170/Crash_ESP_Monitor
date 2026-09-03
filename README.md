@@ -35,7 +35,7 @@ Chaque bloc a été **réécrit sous une API homogène** plutôt que recopié te
 
 ## Caractéristiques
 
-- **Header-only** : `src/Crash_ESP_Monitor.h`, tout en `inline`, **aucune dépendance** (ni autre lib, ni `.cpp`).
+- **Header-only** : `src/Crash_ESP_Monitor.h`, tout en `inline`, **aucune dépendance** (ni autre lib, ni `.cpp`). ⚠️ **À inclure dans UN SEUL fichier source du projet** (un seul `.ino`/`.cpp`) : les variables globales partagées (`t_fct`, `cm_rtc`…) doivent avoir une définition unique.
 - **Journal RTC persistant** : ESP32 → mémoire `RTC_NOINIT` (40 événements) ; ESP8266 → mémoire RTC utilisateur `system_rtc_mem_*` (512 o → 8 événements).
 - **Détection de crash au boot** : raison anormale (panic, WatchDog, brownout…), déverse le journal + registres RTC de diagnostic (`addr2line`) + **compteurs par type** + **détection de boucle de reboot**. ⚠️ **v0.3.2 — garde anti-faux-positif** : si le journal RTC est vide (`head == 0`, premier boot après flashage/RTC vierge), la raison anormale (ex. WatchDog n°7 laissé par esptool) n'est **pas** un vrai crash → `CM_Init()` n'enregistre ni ne dump rien. ⚠️ **v0.3.3** : **heap RÉEL au crash** (hook `esp_register_shutdown_handler` → `crash_heap_reel`/`crash_maxalloc_reel` capturés au moment du restart, affichés dans « Heap au crash ») + garde **`CM_HeapOKBloc(seuil, seuilBloc)`** sensible à la fragmentation (exige un bloc contigu, pas seulement le heap total — évite les `abort()` HTTP/TLS sur heap fragmenté).
 - **Hook de sortie** : `Serial` par défaut, ou n'importe quel canal via `CM_SetOutput(callback)` (ex. **SerialWeb**).
@@ -45,7 +45,7 @@ Chaque bloc a été **réécrit sous une API homogène** plutôt que recopié te
 
 ```ini
 lib_deps =
-    https://github.com/Fo170/Crash_ESP_Monitor.git
+    https://github.com/Fo170/Crash_ESP_Monitor.git@^0.3.4
 ```
 
 ## Utilisation rapide
@@ -69,8 +69,8 @@ void loop() {
     CM_HWM_Core0();       // high-water mark pile/heap
     CM_HWM_Core1();
 
-    // Garde de sécurité avant un appel réseau/Domoticz :
-    if (!CM_HeapOK(20000)) { delay(1000); return; }
+    // Garde anti-fragmentation (v0.3.3+) avant un appel réseau/Domoticz :
+    if (!CM_HeapOKBloc(30000)) { delay(1000); return; }   // 30 Ko libres ET bloc contigu ≥ 15 Ko
     // ... lecture Domoticz / envoi Telegram ...
 }
 ```
@@ -98,8 +98,8 @@ void setup() {
 | `CM_CrashRecent()` | `true` si le boot précédent a paniqué |
 | `CM_Statut()` | String : boots, raison boot, HWM pile/heap, mémoire |
 | `CM_Journal(nb)` | String des `nb` derniers événements |
-| `CM_HWM_Core0()` / `CM_HWM_Core1()` | High-water marks (à appeler dans chaque boucle de tâche) |
-| `CM_HeapMaj()` | Heap libre minimum depuis le boot |
+| `CM_HWM_Core0()` / `CM_HWM_Core1()` | High-water marks pile (à appeler dans chaque boucle de tâche) + heap min (v0.3.4) |
+| `CM_HeapMaj()` | Heap libre minimum depuis le boot (appelé automatiquement par `CM_HWM_*`) |
 | `CM_HeapOK(seuil)` | Garde : `false` si heap libre < seuil (log warning) |
 | `CM_HeapOKBloc(seuil, seuilBloc)` | Garde anti-fragmentation : `false` si heap libre < seuil OU plus grand bloc contigu < seuilBloc (défaut seuil/2) — v0.3.3 |
 | `CM_SetOutput(cb)` | Hook de sortie `void(*)(const char*)` (défaut Serial) |
@@ -125,6 +125,29 @@ void setup() {
 | `src/Crash_ESP_Monitor.h` | La librairie complète (unique) |
 | `examples/ESP32_CrashMonitor/` | Exemple ESP32 |
 | `examples/ESP8266_CrashMonitor/` | Exemple ESP8266 |
+
+## Changelog
+
+### v0.3.4
+- **« Heap libre min » enfin suivi sur ESP32** : `CM_HWM_Core0()/Core1()` appellent désormais `CM_HeapMaj()` (avant, la valeur restait à 0 si la fonction n'était pas appelée manuellement).
+- **Anti-recyclage du heap « réel »** : `crash_heap_reel`/`crash_maxalloc_reel` sont purgés après consommation (détection de crash) et au boot normal — une vieille valeur (reset dur, hook non exécuté) ne ressort plus pour un crash ultérieur. Le bloc contigu du dernier crash est conservé en RAM (`cm_crash_maxalloc_last`).
+- **Raison `SDIO` (n°10)** ajoutée à `CM_ResetReasonTexte()`.
+- **Horodatage fiable** : seuil NTP passé de `100000` s (faux positif après ~28 h sans synchro) à `CM_EPOCH_FIABLE` (1 000 000 000 s) ; le journal affiche l'**heure locale** (`localtime`) comme le résumé de crash (cohérence fuseau).
+- **Garde de taille RTC ESP8266** : `static_assert(sizeof(CMRtcBlock) <= 512)` (mémoire RTC utilisateur) — un futur champ déborderait sinon silencieusement.
+- Affichage HWM sans tailles de pile codées en dur « (sur 10000/20000) ».
+- Magic RTC inchangée (« MON3 » — aucune modification de structure RTC).
+
+### v0.3.3
+- **Heap RÉEL au crash** via hook `esp_register_shutdown_handler` (`crash_heap_reel`/`crash_maxalloc_reel`).
+- **`CM_HeapOKBloc(seuil, seuilBloc)`** : garde anti-fragmentation (bloc contigu + heap total).
+- **`getLargestFreeBlock()`** : plus grand bloc contigu (ESP32/ESP8266).
+- Magic RTC « MON3 » (invalidation des données v0.3.2).
+
+### v0.3.2
+- **Garde anti-faux-positif** : journal RTC vide au premier boot → raison anormale ignorée.
+
+### v0.3.1
+- Fusion initiale (t_fct + Debug + boot_info + chip + MemoryInfo + WatchDog + monitoring crash) + anneau `crash_boots` (boucle de reboot), magic « MON2 ».
 
 ## Licence
 

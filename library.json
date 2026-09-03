@@ -1,6 +1,6 @@
 {
   "name": "Crash_ESP_Monitor",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "Monitoring de crash pour ESP8266/ESP32 : journal RTC persistant, raison de boot, compteurs de crash + détection de boucle de reboot, WatchDog, HWM pile/heap, garde de sécurité heap + utilitaires fusionnés (uptime t_fct, logs Debug, boot_info, chip_information, MemoryInfo) en un seul header",
   "keywords": ["crash", "monitor", "panic", "reboot", "watchdog", "wdt", "journal", "rtc", "heap", "stack", "esp8266", "esp32", "debug", "uptime", "boot", "reset", "trace"],
   "repository": { "type": "git", "url": "https://github.com/Fo170/Crash_ESP_Monitor.git" },

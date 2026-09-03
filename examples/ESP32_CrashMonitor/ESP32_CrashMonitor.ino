@@ -20,7 +20,7 @@ void setup()
   chip_information();           // CPU/Flash
   boot_info();                  // raison du reset
 
-  CM_Event("BOOT Crash_ESP_Monitor v0.3.1");
+  CM_Event("BOOT Crash_ESP_Monitor v0.3.4");
 
   // Si un crash a eu lieu au boot précédent, on l'affiche sur la sortie
   String crash = CM_Resume();
@@ -48,7 +48,7 @@ void loop()
     dernier = millis();
     CM_Event("tache télémétrie (uptime %.0f s)", t_fct);
 
-    if (!CM_HeapOK(20000))      // garde de sécurité heap
+    if (!CM_HeapOKBloc(20000))  // garde anti-fragmentation (v0.3.3) : 20 Ko libres ET bloc contigu ≥ 10 Ko
       Serial.println("⚠️ heap bas, on évite un appel réseau");
     else
       Serial.println("✅ heap OK, appel réseau possible");
