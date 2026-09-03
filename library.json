@@ -1,0 +1,30 @@
+{
+  "name": "Crash_ESP_Monitor",
+  "version": "0.3.3",
+  "description": "Monitoring de crash pour ESP8266/ESP32 : journal RTC persistant, raison de boot, compteurs de crash + détection de boucle de reboot, WatchDog, HWM pile/heap, garde de sécurité heap + utilitaires fusionnés (uptime t_fct, logs Debug, boot_info, chip_information, MemoryInfo) en un seul header",
+  "keywords": ["crash", "monitor", "panic", "reboot", "watchdog", "wdt", "journal", "rtc", "heap", "stack", "esp8266", "esp32", "debug", "uptime", "boot", "reset", "trace"],
+  "repository": { "type": "git", "url": "https://github.com/Fo170/Crash_ESP_Monitor.git" },
+  "authors": [
+    { "name": "Olivier FOURNET", "email": "olivier.fournet@free.fr", "url": "https://github.com/Fo170", "maintainer": true }
+  ],
+  "license": "GPL-3.0-only",
+  "homepage": "https://github.com/Fo170/Crash_ESP_Monitor",
+  "frameworks": "arduino",
+  "platforms": ["espressif8266", "espressif32"],
+  "headers": "Crash_ESP_Monitor.h",
+  "examples": [
+    {
+      "name": "ESP32 : monitoring de crash",
+      "base": "examples/ESP32_CrashMonitor",
+      "files": ["ESP32_CrashMonitor.ino"]
+    },
+    {
+      "name": "ESP8266 : monitoring de crash",
+      "base": "examples/ESP8266_CrashMonitor",
+      "files": ["ESP8266_CrashMonitor.ino"]
+    }
+  ],
+  "export": {
+    "exclude": [".github", "docs", "tests", ".pio", "*.md", "*.yml", "*.txt", "*.ini"]
+  }
+}

@@ -1,0 +1,60 @@
+#######################################
+# Syntax Coloring Map For Crash_ESP_Monitor
+#######################################
+
+#######################################
+# Datatypes (KEYWORD1)
+#######################################
+
+Crash_ESP_Monitor	KEYWORD1
+CMEvent	KEYWORD1
+CMRtcBlock	KEYWORD1
+MemoryInfo	KEYWORD1
+MemoryStats	KEYWORD1
+
+#######################################
+# Methods and Functions (KEYWORD2)
+#######################################
+
+INIT_Temp_fct	KEYWORD2
+Calcule_Temp_fct	KEYWORD2
+getBootTimeEpoch	KEYWORD2
+getBootTimeString	KEYWORD2
+CM_Init	KEYWORD2
+CM_Event	KEYWORD2
+CM_Resume	KEYWORD2
+CM_CrashRecent	KEYWORD2
+CM_Statut	KEYWORD2
+CM_Journal	KEYWORD2
+CM_HWM_Core0	KEYWORD2
+CM_HWM_Core1	KEYWORD2
+CM_HeapMaj	KEYWORD2
+CM_HeapOK	KEYWORD2
+CM_SetOutput	KEYWORD2
+CM_ResetReason	KEYWORD2
+CM_ResetReasonTexte	KEYWORD2
+CM_ReasonAnormale	KEYWORD2
+CM_CrashEnregistrer	KEYWORD2
+CM_CrashLoop	KEYWORD2
+CM_CrashResume	KEYWORD2
+CM_WatchDogInit	KEYWORD2
+CM_WatchDogAdd	KEYWORD2
+CM_WatchDogReset	KEYWORD2
+CM_TraceJson	KEYWORD2
+boot_info	KEYWORD2
+chip_information	KEYWORD2
+getFreeMemory	KEYWORD2
+getTotalHeap	KEYWORD2
+getHeapFragmentation	KEYWORD2
+getUsedMemory	KEYWORD2
+getMemoryInfo	KEYWORD2
+getMemoryStats	KEYWORD2
+getMemoryUsagePercent	KEYWORD2
+printMemoryInfo	KEYWORD2
+printMemoryStats	KEYWORD2
+
+#######################################
+# Instances (KEYWORD2)
+#######################################
+
+t_fct	KEYWORD2
